@@ -1,0 +1,171 @@
+---
+title: "Untitled"
+author: "Daria Bolataeva"
+output: html_document
+---
+
+```{r warning=FALSE}
+library(xlsx)
+library(psych)
+library(sjPlot)
+library(tidyverse)
+library(plm)
+library(stargazer)
+library(lmtest)
+library(ggcorrplot)
+```
+
+```{r}
+panel <- read.xlsx('data_polarization.xlsx', 1)
+```
+
+```{r}
+panel %>% summarize(mean = c(mean(ideology), 
+                            mean(distmagnitude),
+                            mean(gini),
+                            mean(unemployment),
+                            mean(voterturnout)),
+                   sd = c(sd(ideology), 
+                            sd(distmagnitude),
+                            sd(gini),
+                            sd(unemployment),
+                            sd(voterturnout)),
+                   min = c(min(ideology), 
+                            min(distmagnitude),
+                            min(gini),
+                            min(unemployment),
+                            min(voterturnout)),
+                   max = c(max(ideology),
+                           max(distmagnitude),
+                           max(gini),
+                           max(unemployment),
+                           max(voterturnout)))
+```
+
+```{r}
+affect_pol <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(affect),
+            sd = sd(affect),
+            var = var(affect))
+
+pr_1 <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(ideology),
+            sd = sd(ideology),
+            var = var(ideology))
+
+pr_2 <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(distmagnitude),
+            sd = sd(distmagnitude))
+
+pr_3 <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(gini),
+            sd = sd(gini))
+
+pr_3 <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(unemployment),
+            sd = sd(unemployment))
+
+pr_4 <- panel %>% group_by(Country)%>% 
+  summarise(mean = mean(voterturnout),
+            sd = sd(voterturnout))
+```
+
+
+```{r}
+ggcorrplot(cor(panel[4:7], method = 'spearman'),
+           outline.color = 'black',
+           colors = c("#6D9EC1", "white", "#E46726"),
+           lab = TRUE,
+           title = "Корреляционная матрица",
+           lab_size = 3,
+           ggtheme = theme(plot.title = element_text(hjust = 0.5)))
+```
+
+```{r}
+ggplot(affect_pol, aes(x = mean, y = reorder(Country, mean))) +
+  geom_point(size = 1.5) +  
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()) + 
+  geom_vline(xintercept = mean(panel$affect)) +
+  geom_hline(yintercept = "USA", color = "lightblue") +
+  labs(title = 'Аффективная поляризация в США и странах Европы',
+       x = 'Индекс аффективной поляризцаии (АП)',
+       y = 'Страны',
+       color = 'Car type')
+```
+
+
+```{r}
+# преобразование переменных перед оцениванием
+panel$distmagnitude <- log(panel$distmagnitude)
+panel$ideology <- scale(panel$ideology, center = TRUE)
+```
+
+
+```{r}
+ols <- plm(affect ~ ideology + distmagnitude + gini + unemployment + voterturnout, data=panel, model="pooling")
+stargazer(ols, type = 'text')
+```
+
+```{r}
+LSDV0 <- lm(affect ~ ideology + distmagnitude + gini + unemployment + voterturnout + as.factor(Country), data = panel)
+stargazer(LSDV0, type = 'text')
+```
+
+```{r}
+fe <- plm(affect ~ ideology + distmagnitude + gini + unemployment + voterturnout, data = panel, index=c("Country", "year"), model="within")
+stargazer(fe, type= 'text')
+```
+
+```{r}
+stargazer(ols, fe)
+```
+
+```{r}
+pFtest(fe, ols)
+```
+
+```{r}
+re <- plm(affect ~ ideology + distmagnitude + gini + unemployment + voterturnout, data = panel, index=c("Country", "year"), model="random")
+stargazer(re, type = 'text')
+```
+```{r}
+phtest(fe, re)
+```
+
+```{r}
+coeftest(fe, vcov = vcovHC, type = "HC3")
+```
+
+```{r}
+bptest(LSDV0)
+bptest(fe)
+```
+
+```{r}
+y_pred <- LSDV0$fitted 
+panel1 <- data.frame(panel, y_pred) 
+merged <- panel1 %>% group_by(Country)%>% summarize(., cor(affect, y_pred))%>% merge(panel1, ., by="Country")
+merged$new <- ifelse(abs(merged$`cor(affect, y_pred)`)<0.3,1,0)
+```
+
+
+```{r warning=FALSE}
+fe_country_2 <- plm(affect~ideology + distmagnitude + gini + unemployment + voterturnout, merged[merged$new == 0,], index=c("Country", "year"), effect = "individual")
+coeftest(fe_country_2, vcov = vcovHC, type = "HC3")
+```
+
+
+
+
+
+`
+
+
+
+
+
+
+
